@@ -16,7 +16,7 @@ mod format;
 mod runtime;
 
 pub use config::{Config, ImportantConfig, SinkFormat};
-pub use runtime::{LogGuard, init, set_level};
+pub use runtime::{LogGuard, Stats, init, set_level, stats};
 use std::fmt;
 
 /// Result returned by configuration and lifecycle operations.

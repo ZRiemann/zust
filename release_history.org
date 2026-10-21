@@ -3,6 +3,30 @@
 
 * Releases
 
+** v0.2.0 - 2026-10-21T12:47:12Z
+:PROPERTIES:
+:CUSTOM_ID: v0.2.0
+:END:
+
+*** Changes
+- Async logging drops incoming records when the bounded queue is full and exposes
+  retained drop counters through stats().dropped on the component and facade.
+- Report overflow summaries directly from the worker with five-second throttling
+  and a final shutdown delta. Run severity-triggered flushing on the worker and
+  preserve reliable explicit flush admission and draining of accepted records.
+- Update bilingual logging guidance and add overflow, control and consumer coverage.
+
+*** Compatibility
+- Full queues no longer block data producers; all levels, including important,
+  can lose incoming records. Important logging is diagnostic, not durable audit storage.
+- Existing configuration remains valid; no overflow policy option is added.
+
+*** Verification
+- Existing verification notes record focused Debug/Release tests and Clippy;
+  see [[file:doc/en/verification.org][results and limits]]. These checks were not rerun for this commit.
+- Commit preparation checks version metadata and whitespace only; no additional
+  tests, builds, downstream runs, soak tests or publication were performed.
+
 ** v0.1.0 - 2026-10-21T02:17:02Z
 :PROPERTIES:
 :CUSTOM_ID: v0.1.0

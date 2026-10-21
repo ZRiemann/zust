@@ -194,8 +194,9 @@ cutoff per feature family at the application boundary; Cargo feature unification
 means the final filter applies to all consumers of that backend instance.
 
 Async mode shares one backend queue and one worker across all destinations.
-Full queues block producers, including important callers. There is no
-intentional dropping or unbounded retry. Queue acceptance order is preserved;
+Full queues discard incoming data records at every level, including important.
+Producers never wait for queue capacity or retry. Formatting/allocation/locks
+remain outside a hard real-time guarantee. Queue acceptance order is preserved;
 concurrent producers have no separate wall-clock ordering guarantee.
 
 Stop and join application producers, then call =guard.shutdown()=. It stops
@@ -225,3 +226,19 @@ renamed-consumer and static-filter checks. No backend types leak through the
 supported application interface.
 
 See [[file:../../BUILD.org][commands]] and [[file:verification.org][actual results]].
+
+
+* Async overflow counters and controls
+
+=stats().dropped= counts rejected data queue records, not calls or sink lines.
+It is zero before initialization and retained after shutdown. Capacity drops
+are not output failures; actual channel disconnection and I/O errors still fail
+lifecycle operations. Important is diagnostic, never durable audit storage.
+The worker writes a direct warn summary with =dropped_delta/dropped_total/queue_size=
+on first observed loss and at most every five seconds thereafter; shutdown
+reports any remaining delta. Summaries bypass the queue and data counters.
+Severity-triggered flushing runs on the worker. Explicit flush reliably enters
+the queue, may wait for capacity, and remains request-only. Shutdown drains all
+accepted records, joins, reports pending loss and flushes the outputs. No
+producer-side stderr is used for capacity drops. Existing JSON/config stays valid;
+there is no overflow policy option.

@@ -76,3 +76,24 @@ No full library delivery build/rebuild/install, downstream migration, long
 soak/load test, sanitizer run, other-OS validation, publish or deployment.
 No commit/push was created. Release-history timestamp remains a draft until an
 authorized version commit supplies its actual UTC committer timestamp.
+
+* Overflow policy verification — 2026-10-21
+
+This entry supersedes the earlier blocking-queue contract, not the historical
+results above. Rust 1.97.1, locked dependencies, Linux x86_64.
+
+- Debug and Release: =cargo test --locked -p zust-log --lib --tests= passed
+  five unit tests, three config tests and all three runtime harness tests
+  (18 operational child scenarios plus the static-level scenario).
+- A paused capacity-one backend proves public important/warn/error submissions
+  finish while full, only the incoming records drop, public final stats retain
+  three drops, explicit flush survives saturation, and an accepted warn flushes
+  on the worker. Controlled report clocks verify five-second and final deltas.
+- Existing concurrent shutdown now verifies accepted output + dropped = evaluated
+  submissions, with synthetic summaries excluded. Real asynchronous rotation
+  failure remains an output error, not a drop.
+- Renamed facade/component consumer passed Debug/Release, including the new
+  shared stats API. Clippy with warnings denied passed both profiles. Facade
+  unit selection and both facade/component executable doc examples passed.
+- No full delivery build, downstream application run, sanitizer, soak or
+  performance comparison was performed. The native benchmark remains synchronous.

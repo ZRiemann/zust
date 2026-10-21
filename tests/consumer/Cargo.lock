@@ -812,14 +812,14 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
 name = "zust"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "zust-log",
 ]
 
 [[package]]
 name = "zust-log"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "serde",

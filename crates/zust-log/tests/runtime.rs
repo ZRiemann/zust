@@ -114,7 +114,7 @@ fn child() {
         "sync" | "async" | "threshold-info" | "runtime-off" => {
             cfg.r#async = scenario == "async";
             cfg.console = scenario == "sync";
-            cfg.queue_size = 1;
+            cfg.queue_size = 16;
             if scenario == "threshold-info" {
                 cfg.important.level = Level::Info;
             }
@@ -317,13 +317,16 @@ fn child() {
                 thread.join().unwrap();
             }
             let text = fs::read_to_string(runtime_path).unwrap();
-            assert_eq!(text.lines().count(), accepted.load(Ordering::SeqCst));
-            let mut ids: Vec<usize> = text.lines().map(|l| l.parse().unwrap()).collect();
+            let mut ids: Vec<usize> = text
+                .lines()
+                .filter(|l| !l.contains("[logging:overflow]"))
+                .map(|l| l.parse().unwrap())
+                .collect();
+            let total = accepted.load(Ordering::SeqCst);
+            assert_eq!(ids.len() + zust_log::stats().dropped as usize, total);
             ids.sort_unstable();
-            assert_eq!(
-                ids,
-                (0..accepted.load(Ordering::SeqCst)).collect::<Vec<_>>()
-            );
+            assert!(ids.windows(2).all(|pair| pair[0] < pair[1]));
+            assert!(ids.iter().all(|id| *id < total));
         }
         "drop" => {
             cfg.r#async = true;
