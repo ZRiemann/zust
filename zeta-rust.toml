@@ -1,0 +1,5 @@
+schema = 2
+manifest = "Cargo.toml"
+toolchain = "rust-toolchain.toml"
+capabilities = []
+native-dependencies = []

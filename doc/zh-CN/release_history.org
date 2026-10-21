@@ -1,0 +1,32 @@
+#+TITLE: zust 发布历史
+#+STARTUP: indent
+
+* 发布记录
+
+** v0.1.0 - 2026-10-21T02:17:02Z
+:PROPERTIES:
+:CUSTOM_ID: v0.1.0
+:END:
+
+*** 变更
+- 建立由 Forge 治理的 Rust workspace，门面 package zust 的 library 名为 z，
+  默认不启用组件，通过 feature 提供 z::log。
+- 新增独立 zust-log，使用固定版本 spdlog-rs，实现 zpp 配置和文本/JSONL 适配、
+  important 独立路由、有界异步背压、调用者元数据及显式排空/刷新/关闭归属。
+- 补齐双语使用与运行文档、配置 fixture、组件/门面/重命名消费者验证和显式微基准。
+- 将 logging Cargo 示例注册为 zbuild 显式目标，复用 Forge 的示例选择、profile
+  产物及仓库根目录运行支持。默认库目标不变；run 使用已有产物，dev 先构建。
+
+*** 兼容性
+- 轮转文件直接使用后端默认命名。支持范围内的合法 zpp 配置可复用；非法已知字段、
+  不支持的 pattern 功能明确报错。
+- 保留 Rust 源码/模块路径约定，全部通道使用同一配置的基础 logger 名称。
+  精确兼容边界见日志指南。
+
+*** 验证说明
+- Debug/Release 检查和聚焦正确性测试通过，包含静态裁剪、独立消费者和 Forge 回归；
+  已运行显式 Release 微基准，见 [[file:verification.org][结果与边界]]。
+- logging 示例的 zbuild Debug/Release check、build、test、run 及 Debug dev 通过；
+  临时文件 smoke 验证三类输出与配置查找。共享清理仅在隔离环境测试。
+- 未执行完整交付构建、长时间压力/浸泡、其他平台验收、下游迁移、推送、发布或部署。
+- 提交准备已检查暂存差异空白；本次未重新运行测试或构建。

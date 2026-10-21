@@ -1,0 +1,53 @@
+#+TITLE: zust — ZetaX shared Rust components
+#+STARTUP: indent
+
+Shared Rust components and foundational libraries for the ZetaX ecosystem.
+
+zust follows zpp's reusable-component design and ZetaX engineering conventions.
+Cargo packages retain descriptive names; the =zust= package exposes the =z=
+library, with optional components under =z::xxx=.
+
+- [[file:doc/en/readme.org][English documentation]]
+- [[file:doc/zh-CN/readme.org][中文文档]]
+- [[file:BUILD.org][Build and verification]]
+- [[file:release_history.org][Release history]]
+- [[file:LICENSE][Apache-2.0 license]]
+
+* Quick start
+
+In a sibling consumer's Cargo manifest:
+
+#+begin_src toml
+[dependencies]
+zust = { path = "../zust", features = ["log"] }
+#+end_src
+
+#+begin_src rust
+fn main() -> z::log::Result<()> {
+    let guard = z::log::init(z::log::Config::default())?;
+    z::log::info!("[service:startup] started");
+    z::log::important!("[service:ready] ready");
+    guard.shutdown()
+}
+#+end_src
+
+The facade enables no components by default. Only its library is named =z=;
+independent packages such as =zust-log= retain unique library names. Re-exports
+add no runtime forwarding layer and do not create another logger instance.
+The logging adapter itself has measured work for filtering, metadata, routing
+and lifecycle synchronization; see [[file:doc/en/verification.org][verification]].
+
+* Run the logging example
+
+#+begin_src sh
+./zbuild.py build logging --profile debug
+./zbuild.py run logging --profile debug
+# Build and run once with configuration:
+./zbuild.py dev logging --profile debug -- doc/server.json example
+#+end_src
+
+Without arguments the example writes to the console only. With the supplied
+configuration it writes files under =${ZETAX_ROOT}/logs/zust/=. The example is
+explicitly selected; default library targets stay unchanged. =run= only starts
+existing output; =dev= builds first. See [[file:BUILD.org][build guide]] for profiles,
+arguments, working directory and shared cleanup scope.

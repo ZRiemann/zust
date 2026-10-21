@@ -1,0 +1,20 @@
+#+TITLE: zust 中文文档
+#+STARTUP: indent
+
+[[file:../../readme.org][项目首页]] | [[file:../en/readme.org][English]]
+
+zust 参考 zpp 的可复用组件设计，为 ZetaX 提供公共 Rust 功能库。
+
+- [[file:logging.org][日志 API、配置与运行约定]]
+- [[file:../../BUILD.org][构建与验证命令]]
+- [[file:verification.org][实际验证结果与性能边界]]
+- [[file:release_history.org][发布历史]]
+
+根 package =zust= 的 library 名称为 =z=，公开入口统一为 =z::xxx=。
+只有门面使用这个库名；独立组件保留唯一名称，例如 =zust_log=。
+门面通过 feature 按需重导出，默认不启用任何组件。
+依赖方向为门面到组件、组件到 Forge 批准的第三方 crate；组件不依赖门面或下游业务。
+
+在项目根目录执行 =./zbuild.py dev logging --profile debug=，即可编译并运行一次
+显式选择的日志示例，默认只输出控制台。文件配置和完整命令见
+[[file:logging.org][日志使用说明]]及 [[file:../../BUILD.org][构建指南]]。

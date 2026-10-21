@@ -1,0 +1,197 @@
+#+TITLE: zust-log 配置与运行约定
+#+STARTUP: indent
+
+[[file:readme.org][文档首页]] | [[file:../en/logging.org][English]]
+
+* API 与资源归属
+
+消费者启用 =zust/log= 后使用 =z::log=。组件也能独立依赖，以 =zust_log=
+访问。公开类型为 =Config=、=ImportantConfig=、=SinkFormat=、=Level=、=Error=、
+=LogGuard= 和 =Result<T>=；后端 logger、sink、record 不属于应用公共接口。
+
+#+begin_src toml
+[dependencies]
+zust = { path = "../zust", features = ["log"] }
+#+end_src
+
+#+begin_src rust
+fn main() -> z::log::Result<()> {
+    let config = z::log::Config::from_zpp_file("doc/server.json", "example")?;
+    let guard = z::log::init(config)?;
+    z::log::info!("[example:startup] started");
+    z::log::important!("[example:ready] ready");
+    guard.shutdown()
+}
+#+end_src
+
+=init= 在一个进程中只允许成功一次，关闭后也不能重新初始化；初始化失败可以重试。
+=Config::default()= 只启用同步 stdout。两种 JSON 加载入口都默认启用 runtime
+轮转文件，遵循 zpp server loader 的行为。=from_spd_json(&str)= 读取独立 spd 对象；
+=from_zpp_file(path, section)= 选择 =<section>.spd=，并将 service 默认设为 section。
+日志组件不接管应用的其他配置。
+
+* 通过 zbuild 运行示例
+
+#+begin_src sh
+./zbuild.py check logging --profile debug
+./zbuild.py build logging --profile debug
+./zbuild.py run logging --profile debug
+./zbuild.py run logging --profile debug -- doc/server.json example
+./zbuild.py dev logging --profile debug -- doc/server.json example
+# 默认使用 release：
+./zbuild.py build logging
+./zbuild.py run logging
+#+end_src
+
+=logging= 必须显式选择，不改变默认库目标。=run= 只启动已有产物，缺失时明确失败；
+=dev= 先编译再运行一次。=--= 后的参数完整透传，构建日志不打印运行参数。
+不传参数时只输出控制台；同时传入 JSON 路径和 section 后读取 =<section>.spd=。
+运行工作目录固定为仓库根目录，配置路径与日志相对路径均以此解析。
+产物为 =build/cargo/debug/examples/logging= 或
+=build/cargo/release/examples/logging=（Windows 加 =.exe=）。
+示例配置使用 =${ZETAX_ROOT}/logs/zust/= 并启用启动轮转；试用文件输出时请使用
+独立配置和日志路径。测试及 workspace/profile 共享清理语义见
+[[file:../../BUILD.org][构建指南]]。
+
+** 演示内容
+
+=examples/logging.rs= 按标量、常用组合、自定义结构、日志级别分组输出：
+
+- 标量覆盖 =i8/i16/i32/i64/i128/isize=、=u8/u16/u32/u64/u128/usize=、
+  =f32/f64=、=bool= 和 Unicode =char=；包含十六进制和浮点精度格式。
+- 常用组合覆盖 =&str=、=String=、数组、切片、元组、=Option= 的 Some/None
+  和 =Result= 的 Ok/Err。字符串展示 =Display=（={}）和 =Debug=（={:?}），
+  数组等组合类型使用 =Debug=。
+- 同一个示例订单展示派生 =Debug=、手写 =Display= 和借用包装器
+  =OrderLog<'a>(&'a Order)= 的日志格式。两种 =Display= 实现直接通过 =write!=
+  写入 formatter，不预先创建格式化字符串，也不在格式化过程中记录日志。
+- 分别输出 =trace/debug/info/warn/error/critical=；warning、error 和 critical
+  消息明确标记为演示，不代表实际故障。最后的 =important!= ready 消息级别为 info，
+  important 是独立通道；=Off= 是过滤开关，不是可输出的严重级别。
+
+示例尊重传入配置，不强制改变过滤阈值。默认 trace 阈值显示全部记录；较高阈值会隐藏
+低级别记录。默认只输出控制台，配置启用 important 文件且其阈值为 warn、runtime
+阈值为 trace 时，该文件依次接收 warn、error、critical 和显式 ready 四条记录。
+runtime 阈值为 warn 时，普通目标只输出前三条，important 文件仍接收这四条。
+
+* 配置兼容
+
+| spd 字段 | 默认值 | 含义 |
+|----------+--------+------|
+| async | false | 启用共享有界异步后端 |
+| console | true | stdout；仅在终端支持时启用颜色 |
+| name | server.log | runtime 文件路径 |
+| max_size | 32 | 单个活动文件大小阈值，单位 MiB |
+| rotats | 3 | 备份数量，不含活动文件 |
+| rotate_on_open | true | 启动时轮转非空旧文件 |
+| queue_size | 8192 | 共享操作队列容量 |
+| flush_interval_sec | 2 | 周期刷新间隔，单位秒 |
+| level | trace | 普通日志最低级别 |
+| flush_level | warn | 此级别及以上记录触发刷新请求 |
+| logger_name | zpp | 为配置兼容保留的默认 logger 名称 |
+| pattern | 见下文 | runtime 文本格式 |
+| service、node、run_id | 空字符串 | JSONL 服务标识 |
+
+Rust 字段写作 =r#async=。程序配置额外提供 =rotating_file=，默认 false；程序配置中
+=flush_interval_sec = 0= 关闭周期刷新，JSON 中该值必须为正数，与 zpp loader 一致。
+级别接受 =trace/debug/info/warn/warning/err/error/critical/off=，区分大小写。
+不隐式读取日志级别环境变量，以配置和 =set_level= 为准。
+
+=important= 支持 =enabled=（false）、=name=（空）、=level=（warn）、=format=
+（jsonl 或 pattern，默认 jsonl）、=pattern=（空时继承 runtime）、=max_size=
+（32 MiB）、=rotats=（3）、=rotate_on_open=（true）。JSON 中启用后未指定名称时，
+使用 =<service>.important.jsonl=；service 为空则使用 =zpp.important.jsonl=。
+直接使用程序配置且名称为空时，使用 =<logger_name>.important.jsonl=。
+
+已知字段必须使用正确类型。容量、大小和备份数必须为正且不能溢出；非法级别或格式、
+缺失服务/spd 对象及未定义的路径变量均返回带字段位置的错误。未知字段忽略。
+运行时先验证配置及全部启用路径，再打开文件。创建 sink 的 I/O 失败可能留下此前
+已创建的目录或文件，但不会发布部分初始化的日志运行时。
+
+路径一次性展开开头的 =~=、=$VAR=、=${VAR}=；变量值不递归展开。相对路径基于进程
+工作目录。只展开启用 sink 的路径。每个 sink 应使用独立路径，由单进程独占其文件；
+本组件不实现多进程共享同一轮转文件的协调。
+
+轮转数量会转换为后端的“活动文件 + 备份”。文件命名直接采用 spdlog-rs 默认格式，
+例如 =runtime_1.log=，不增加命名兼容层。单条超大记录完整写入，可以超过大小阈值，
+不为满足轮转阈值而截断记录。
+
+* 文本与 JSONL
+
+默认 pattern：
+
+#+begin_example
+%d %H:%M:%S.%f %t %^%L%$: %v\t%g:%#
+#+end_example
+
+其中 =\t= 表示实际制表符，或 JSON 中对应的转义形式。pattern 初始化时解析一次。
+
+| 占位符 | 含义 |
+|--------+------|
+| %% | 百分号 |
+| %Y %m %d %H %M %S | 本地年月日和时分秒 |
+| %e %f | 三位毫秒、六位微秒 |
+| %t %P | 进程内短线程编号、进程 ID |
+| %l %L | 长级别名（warn 显示 warning）、T D I W E C |
+| %n %v | logger 名称、原始消息 |
+| %s %g %# | 源文件名、编译期源路径、行号 |
+| %! | Rust 模块路径 |
+| %^ %$ | 控制台颜色范围；文件不写 ANSI 字节 |
+
+其他占位符及宽度/对齐修饰报错。短线程编号在首次接受输出时从 0 分配，每线程缓存，
+至少显示两位，超过两位自然增长，不在 64 处循环。异步切换保留调用者时间及源码信息。
+Rust 源码路径遵循编译设置，function 使用模块路径，与 C++ 函数名存在差异。
+
+JSONL 共 14 个字段：
+
+#+begin_example
+ts level logger service node run_id pid tid file line function component action message
+#+end_example
+
+pid/tid/line 为数字，其他为字符串。ts 使用本地 =YYYY-MM-DDTHH:MM:SS.ffffff=，
+不附加时区，与 zpp 一致。JSON 级别为 warn，文本 %l 为 warning。
+完整 message 经 JSON 转义，内嵌换行不会拆分 JSONL 记录。
+消息开头的 =[component:action]= 填充对应字段；=[nng:scope:action]= 的 component
+为 =nng.scope=。无标签或非法标签产生空字段，不增加 important 字段。
+所有通道均使用配置的基础 logger 名称，显式 important 记录不追加通道后缀。
+
+* 过滤、异步与关闭
+
+普通日志先经过 runtime 级别过滤，再输出到启用的普通目标；达到 important
+阈值时也写入 important 文件。=important!= 的级别为 info：普通目标遵守 runtime
+过滤，启用的 important 目标独立接收，不受两者级别阈值限制。每个目标最多一条。
+important 表示通道选择，不是新的严重级别。
+
+=set_level(Level)= 调整普通过滤。没有目标接受时，宏在格式化前短路，不求值参数。
+初始化前及关闭后也不求值。门面重导出不增加运行时转发层；组件自身需要承担过滤、
+元数据和生命周期协调成本。
+
+独立组件 features =level-<severity>= 和 =release-level-<severity>= 转发后端编译期
+裁剪；门面对应用 =log-level-<severity>= 和 =log-release-level-<severity>=，不会
+单独启用日志组件。severity 可为 =off/critical/error/warn/info/debug/trace=。
+裁剪同样影响 info 级别的 important。应用边界每类选择一个裁剪阈值；Cargo feature
+合并使最终阈值作用于共享该后端实例的消费者。
+
+异步模式全部目标共享一个后端队列和一个工作线程。队列满时阻塞生产者，important
+调用也遵守背压；不主动丢弃或无限重试。保持入队顺序，不承诺并发生产者的额外时间顺序。
+
+应先停止并 join 应用生产者，再调用 =guard.shutdown()=。关闭先停止接受新记录，等待
+在途格式化/提交，停止周期刷新，排空队列、刷新输出并等待工作线程退出。
+并发或重复 shutdown 等待完成，并返回已记录的输出错误。异步 =guard.flush()= 只提交
+刷新请求，不是完成屏障；刷新用户态缓冲区不等于 fsync 持久化保证。
+
+不要在日志参数的格式化实现中调用 shutdown：当前调用仍持有关闭必须等待的提交凭证。
+Drop 尽力关闭且不传播 panic，显式 shutdown 返回错误。首个输出失败直接写入 stderr，
+避免递归日志；后续失败计数，通过 flush/shutdown 返回。强制退出、abort 和机器故障
+不能保证排空。
+
+* 依赖与验证边界
+
+Forge 批准 =spdlog-rs 0.5.3=、=chrono 0.4.45= 及所选 Serde/JSON 版本，Cargo
+解析传递依赖并由锁文件固定。直接依赖的许可证元数据为 MIT/Apache-2.0 双许可。
+无需 Rust 的原生 C++ 依赖或 Conan。
+
+为保留调用位置，内部使用固定后端版本导出的宏支持 API。依赖升级时必须重新验证
+直接组件、门面、重命名消费者及编译期裁剪；这些后端类型不属于应用公共接口。
+
+详见 [[file:../../BUILD.org][操作命令]] 与 [[file:verification.org][实际验证结果]]。

@@ -1,0 +1,78 @@
+#+TITLE: zust v0.1.0 verification
+#+STARTUP: indent
+
+[[file:readme.org][Documentation index]] | [[file:../zh-CN/verification.org][中文]]
+
+* Executed checks — 2026-10-20
+
+Local host: Linux x86_64, kernel 6.17.0-40-generic, Intel Core i7-11700.
+Toolchain: Rust 1.97.1, committed Cargo dependency resolution.
+These results describe the current uncommitted implementation, not a published
+release, downstream acceptance or deployment.
+
+- Forge-backed check completed for debug and release: formatting, compiler and
+  Clippy checks for both packages and all native targets.
+- Forge-backed tests passed for debug and release: facade namespace test;
+  four component unit tests; three configuration tests; runtime child harness
+  with eighteen operational scenarios and an additional static-level scenario.
+- Runtime coverage includes sync/async outputs, important independence and
+  deduplication, dynamic filtering, 110 distinct short thread IDs, pattern and
+  JSONL outputs, source location, size/startup rotation, expansion, failed-init
+  retry, periodic/level flush, in-flight/concurrent shutdown, Drop draining and
+  an actual asynchronous rotation I/O failure. A gated backend sink verifies
+  bounded queue blocking and draining without loss.
+- Explicit compile-time cutoff checks passed for debug =level-warn=,
+  release =release-level-warn=, and debug =level-off=, including important's info
+  cutoff and argument non-evaluation.
+- Renamed standalone facade/component consumer passed in debug and release,
+  proving shared types/runtime and macro hygiene.
+- Facade without log passed cargo check; cargo tree contains only zust, with no
+  component dependency. Rustdoc generation passed with warnings denied, and
+  both executable Rustdoc examples passed.
+- Four project CLI/version/dependency contract tests passed. help/list/metadata
+  and dry-run were verified without source or generated-output changes;
+  unsupported library actions return an error. Forge build-contract regression
+  passed 20 tests; Rust
+  governance regression passed 12 tests.
+- Explicit =logging= zbuild check/Clippy, build, test and run passed in Debug
+  and Release; dev passed in Debug. Cargo example test has zero unit tests;
+  the separate =python3 tests/check_logging_example.py -v= smoke test exercises
+  main, console/runtime/important output, project-relative configuration from
+  another invocation directory, argument omission and unchanged run artifacts.
+  Its configuration/logs are temporary and removed after completion.
+  Missing run output, build-before-run ordering, argument forwarding, host
+  suffix selection and configuration conflicts passed Forge regression.
+  Shared rebuild/clean were verified in temporary directories and dry-run only;
+  existing workspace artifacts were not cleaned.
+- Fixture JSON retains the server spd section from zpp and zeta_ctp_md spd from
+  zeta_trader, copied on 2026-10-20; tests do not require those sibling repos.
+
+* Bounded Release microbenchmark
+
+Command: =cargo bench --locked -p zust-log --bench logging -- --run=.
+Each case warms up 2,000 records, then samples 50,000 calls on one producer.
+Enabled cases use the same backend size-rotating buffered file sink settings,
+message plus newline, no periodic/level flush, and no rotation during the run.
+The benchmark verifies identical native/wrapped output after final flush.
+Temporary files are owned by the benchmark and removed on success.
+
+| Case | Calls/second | P50 ns | P99 ns |
+|------+--------------+--------+--------|
+| Native enabled | 6,229,905 | 135 | 245 |
+| zust enabled | 3,421,618 | 265 | 323 |
+| Native disabled | 31,712,306 | 14 | 16 |
+| zust disabled | 29,997,510 | 16 | 22 |
+
+One local run; not a statistical performance guarantee. Measurement includes
+clock sampling and sample collection. The enabled difference includes metadata,
+routing, compatibility formatting and lifecycle synchronization. Facade
+re-export itself adds no runtime work. This does not measure the default full
+text pattern, important JSONL, asynchronous throughput, saturation latency,
+fsync or sustained disk performance. Default correctness tests skip measurement.
+
+* Unrun boundaries
+
+No full library delivery build/rebuild/install, downstream migration, long
+soak/load test, sanitizer run, other-OS validation, publish or deployment.
+No commit/push was created. Release-history timestamp remains a draft until an
+authorized version commit supplies its actual UTC committer timestamp.

@@ -1,0 +1,18 @@
+#+TITLE: zust documentation
+#+STARTUP: indent
+
+[[file:../../readme.org][Project home]] | [[file:../zh-CN/readme.org][中文]]
+
+- [[file:logging.org][Logging API, configuration and operations]]
+- [[file:../../BUILD.org][Build and verification commands]]
+- [[file:verification.org][Executed verification and performance boundaries]]
+- [[file:../../release_history.org][Release history]]
+
+The root =zust= package exposes library =z=. Component crates have unique names
+and independent responsibilities. Dependencies point from the facade to
+components, and from components to Forge-approved third-party crates; component
+code never depends on the facade or a downstream application's business policy.
+
+To try logging, use =./zbuild.py dev logging --profile debug= from the project
+root. This builds and runs the explicitly selected example once, using console
+output. See [[file:logging.org][logging usage]] and [[file:../../BUILD.org][build commands]] for file configuration.

@@ -1,0 +1,35 @@
+[package]
+name = "zust-log"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "ZetaX logging with zpp-compatible configuration and output"
+
+[dependencies]
+spdlog-rs.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[features]
+default = []
+level-off = ["spdlog-rs/level-off"]
+level-critical = ["spdlog-rs/level-critical"]
+level-error = ["spdlog-rs/level-error"]
+level-warn = ["spdlog-rs/level-warn"]
+level-info = ["spdlog-rs/level-info"]
+level-debug = ["spdlog-rs/level-debug"]
+level-trace = ["spdlog-rs/level-trace"]
+release-level-off = ["spdlog-rs/release-level-off"]
+release-level-critical = ["spdlog-rs/release-level-critical"]
+release-level-error = ["spdlog-rs/release-level-error"]
+release-level-warn = ["spdlog-rs/release-level-warn"]
+release-level-info = ["spdlog-rs/release-level-info"]
+release-level-debug = ["spdlog-rs/release-level-debug"]
+release-level-trace = ["spdlog-rs/release-level-trace"]
+
+[[bench]]
+name = "logging"
+harness = false

@@ -1,0 +1,38 @@
+#+TITLE: zust Release History
+#+STARTUP: indent
+
+* Releases
+
+** v0.1.0 - 2026-10-21T02:17:02Z
+:PROPERTIES:
+:CUSTOM_ID: v0.1.0
+:END:
+
+*** Changes
+- Establish a Forge-governed Rust workspace and a component-free-by-default zust
+  facade library named z, with logging available through z::log.
+- Add independent zust-log using pinned spdlog-rs: zpp configuration and text/
+  JSONL adaptation, independent important routing, bounded async backpressure,
+  caller metadata and explicit drain/flush/shutdown ownership.
+- Add bilingual usage/operations documentation, configuration fixtures,
+  direct/facade/renamed consumer coverage and an explicit microbenchmark.
+- Register the logging Cargo example as an explicit zbuild target, backed by
+  Forge example selection, profile artifacts and repository-root execution.
+  Keep library defaults unchanged; run uses existing output and dev builds first.
+
+*** Compatibility
+- Use backend default rotation filenames. Valid supported zpp configuration is
+  accepted; invalid known fields and unsupported pattern features fail clearly.
+- Preserve Rust source/module conventions and one configured base logger name
+  across channels. See the logging guide for the precise compatibility boundary.
+
+*** Verification
+- Debug/Release checks and focused correctness tests passed, together with
+  static-filter, standalone consumer and Forge regressions. An explicit Release
+  microbenchmark was run; see [[file:doc/en/verification.org][results and limits]].
+- The explicit logging example passed zbuild Debug/Release check, build, test
+  and run, plus Debug dev; temporary-file smoke checks verified all three
+  outputs and configuration lookup. Shared cleanup was tested only in isolation.
+- No full delivery build, long load/soak test, other-platform acceptance,
+  downstream migration, push, publication or deployment was performed.
+- Commit preparation checked staged whitespace; no tests or builds were rerun.

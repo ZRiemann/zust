@@ -1,0 +1,11 @@
+[workspace]
+
+[package]
+name = "zust-renamed-consumer"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+zetax = { package = "zust", path = "../..", features = ["log"] }
+component = { package = "zust-log", path = "../../crates/zust-log" }

@@ -1,0 +1,38 @@
+{
+  "server": {
+    "spd": {
+      "async": true,
+      "console": true,
+      "rotate_on_open": true,
+      "name": "${ZETAX_ROOT}/logs/zpp/server.log",
+      "max_size": 32,
+      "rotats": 3,
+      "queue_size": 8192,
+      "flush_interval_sec": 2,
+      "pattern": "%d %H:%M:%S.%f %t %^%L%$: %v\t%g:%#"
+    }
+  },
+  "zeta_ctp_md": {
+    "spd": {
+      "async": true,
+      "console": true,
+      "rotate_on_open": true,
+      "service": "zeta_ctp_md",
+      "name": "${ZETAX_ROOT}/logs/zeta_trader/zeta_ctp_md.runtime.log",
+      "max_size": 32,
+      "rotats": 3,
+      "queue_size": 8192,
+      "flush_interval_sec": 2,
+      "pattern": "%d %H:%M:%S.%f %t %^%L%$: %v\t%g:%#",
+      "important": {
+        "enabled": true,
+        "name": "${ZETAX_ROOT}/logs/zeta_trader/zeta_ctp_md.important.jsonl",
+        "level": "warn",
+        "format": "jsonl",
+        "max_size": 16,
+        "rotats": 5,
+        "rotate_on_open": true
+      }
+    }
+  }
+}

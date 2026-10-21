@@ -1,0 +1,227 @@
+#+TITLE: zust-log configuration and operations
+#+STARTUP: indent
+
+[[file:readme.org][Documentation index]] | [[file:../zh-CN/logging.org][中文]]
+
+* API and ownership
+
+Enable =zust/log= and use =z::log=; independent consumers may depend on
+=zust-log= and use =zust_log=. Public types are =Config=, =ImportantConfig=,
+=SinkFormat=, =Level=, =Error= and =LogGuard=, plus the =Result<T>= alias.
+The backend's logger, sink and record types are not public application APIs.
+
+=init(Config)= returns a guard. One successful initialization is allowed per
+process, including after shutdown; failed initialization can be retried.
+=Config::default()= enables synchronous stdout only. Both JSON loaders enable
+the legacy runtime file by default, matching zpp's server loader:
+
+#+begin_src rust
+let config = z::log::Config::from_zpp_file("doc/server.json", "example")?;
+let guard = z::log::init(config)?;
+z::log::info!("[example:startup] started");
+z::log::important!("[example:ready] ready");
+guard.shutdown()?;
+#+end_src
+
+=Config::from_spd_json(&str)= accepts a standalone spd object. The unified-file
+loader selects =<section>.spd= and defaults =service= to the section name.
+Neither loader owns the rest of the application's configuration.
+
+* Try the example through zbuild
+
+#+begin_src sh
+./zbuild.py check logging --profile debug
+./zbuild.py build logging --profile debug
+./zbuild.py run logging --profile debug
+./zbuild.py run logging --profile debug -- doc/server.json example
+./zbuild.py dev logging --profile debug -- doc/server.json example
+# Release is the default:
+./zbuild.py build logging
+./zbuild.py run logging
+#+end_src
+
+=logging= must be selected explicitly. =run= starts existing output only;
+=dev= compiles and starts once. Parameters after =--= are passed unchanged and
+not printed by the build logger. With no arguments, only console output is
+enabled; pass both a JSON path and section to load =<section>.spd=.
+The example runs from the repository root, so configuration and relative log
+paths are stable. Outputs live at =build/cargo/<profile>/examples/logging=
+(=.exe= on Windows). The supplied configuration uses
+=${ZETAX_ROOT}/logs/zust/= and startup rotation; use your own separate paths
+for experiments. See [[file:../../BUILD.org][build guide]] for tests and shared profile cleanup.
+
+** Demonstrated output
+
+=examples/logging.rs= groups output by scalars, common composite types, custom
+structures and log levels:
+
+- Scalars cover =i8/i16/i32/i64/i128/isize=, =u8/u16/u32/u64/u128/usize=,
+  =f32/f64=, =bool= and a Unicode =char=, including hexadecimal and floating-point
+  precision formatting.
+- Common types include =&str=, =String=, arrays, slices, tuples, both Some/None
+  for =Option= and Ok/Err for =Result=. Strings demonstrate =Display= (={}) and
+  =Debug= (={:?}); composites such as arrays use =Debug=.
+- The same sample order demonstrates derived =Debug=, a manual =Display=
+  implementation and a borrowed =OrderLog<'a>(&'a Order)= wrapper for log-specific
+  formatting. Both =Display= implementations write directly to the formatter
+  with =write!=, without creating an intermediate formatted string or logging
+  during formatting.
+- Separate calls emit =trace/debug/info/warn/error/critical=. Warning, error and
+  critical messages explicitly describe demonstrations rather than actual
+  failures. The final =important!= ready message has info severity; important
+  selects a separate channel. =Off= disables filtering acceptance rather than
+  representing an emitting severity.
+
+The example respects the supplied filter configuration. The default trace
+threshold shows every record; higher thresholds suppress lower levels. The
+default configuration writes only to the console. With an enabled important
+file at warn and runtime at trace, the file receives warn, error, critical and
+explicit ready, in that order. At runtime warn, ordinary outputs receive only
+the first three while the important file still receives all four.
+
+* Configuration
+
+| spd field | Default | Meaning |
+|-----------+---------+---------|
+| async | false | Shared bounded asynchronous backend when true |
+| console | true | stdout; color only when a terminal supports it |
+| name | server.log | Runtime rotating file path |
+| max_size | 32 | Active file limit in MiB |
+| rotats | 3 | Backup count, excluding the active file |
+| rotate_on_open | true | Rotate existing nonempty file at startup |
+| queue_size | 8192 | Shared operation queue capacity |
+| flush_interval_sec | 2 | Periodic flush interval |
+| level | trace | Ordinary record minimum level |
+| flush_level | warn | Request a flush for this level and above |
+| logger_name | zpp | Logger name retained for configuration compatibility |
+| pattern | See below | Runtime text pattern |
+| service, node, run_id | empty | JSONL service metadata |
+
+Programmatic =Config= additionally exposes =rotating_file=, false by default.
+Rust writes the async field as =r#async=. A programmatic zero flush interval
+disables periodic flushing; JSON requires a positive interval, as zpp's loader
+does. JSON levels accept =trace/debug/info/warn/warning/err/error/critical/off=.
+Case is significant. Level environment variables are not implicitly read.
+
+=important= accepts =enabled= (false), =name= (empty), =level= (warn), =format=
+(jsonl or pattern, default jsonl), =pattern= (empty inherits runtime), =max_size=
+(32 MiB), =rotats= (3), and =rotate_on_open= (true).
+For JSON loading, an enabled sink with no name uses =<service>.important.jsonl=,
+or =zpp.important.jsonl= when service is empty. Direct programmatic configuration
+uses =<logger_name>.important.jsonl= when its important name is empty.
+
+Known fields must have the correct JSON types. Sizes, backup counts and queue
+capacity must be positive without overflow. Invalid levels/formats, missing
+service/spd objects and undefined referenced environment variables return field
+errors. Unknown fields are ignored. The runtime validates configuration and all
+enabled paths before opening files; an I/O failure during sink creation may
+leave directories or files created by earlier sinks, but publishes no runtime.
+
+Paths expand leading =~=, =$VAR= and =${VAR}= once. An expanded value is not
+recursively expanded. Relative paths use the process working directory. Only
+enabled sinks resolve their paths. Each process must use distinct sink paths
+and own its files exclusively; this is not a multi-process shared-file logger.
+
+The wrapper maps backup count to backend total-file count. Rotation naming is
+spdlog-rs's default (for example =runtime_1.log=); no naming compatibility layer
+is introduced. A single oversized record is written whole and can exceed the
+configured size; records are not truncated to meet the rotation threshold.
+
+* Text and JSONL formats
+
+Default text pattern:
+
+#+begin_example
+%d %H:%M:%S.%f %t %^%L%$: %v\t%g:%#
+#+end_example
+
+The =\t= above denotes an actual tab, or its escaped form in JSON.
+Patterns compile once during initialization. Supported flags:
+
+| Flags | Meaning |
+|-------+---------|
+| %% | Literal percent |
+| %Y %m %d %H %M %S | Local calendar date and time |
+| %e %f | Three-digit milliseconds / six-digit microseconds |
+| %t %P | Process-local short thread number / process ID |
+| %l %L | Long severity (warning for warn) / T D I W E C |
+| %n %v | Logger name / original message |
+| %s %g %# | Source basename / compile-time source path / line |
+| %! | Rust module path |
+| %^ %$ | Console color range; no ANSI bytes in files |
+
+Other flags and width/alignment modifiers return errors. Thread IDs start at
+zero on first accepted emission, are cached per thread, have at least two
+printed digits and do not wrap at 64. Timestamp and caller metadata survive
+asynchronous handoff. Rust source paths follow compiler settings; function
+metadata uses the module path rather than a C++ function name.
+
+JSONL has these 14 fields, with numeric pid/tid/line and strings elsewhere:
+
+#+begin_example
+ts level logger service node run_id pid tid file line function component action message
+#+end_example
+
+=ts= is local =YYYY-MM-DDTHH:MM:SS.ffffff= without a timezone suffix, matching
+zpp. JSON severity is =warn=, while text =%l= is =warning=. The complete message
+is retained and JSON-escaped, so embedded newlines do not split the JSONL record.
+Leading =[component:action]= tags populate those fields; =[nng:scope:action]=
+becomes component =nng.scope=. Untagged/malformed tags produce empty fields.
+No =important= field is added. Logger name is the configured base logger for
+both explicit and ordinary records; it does not gain a channel suffix.
+
+* Filtering and shutdown
+
+Ordinary records first pass the runtime level, then go to enabled runtime
+outputs and, if their level reaches its threshold, the important output.
+=important!= emits info: runtime outputs respect the ordinary level, while the
+enabled important output receives it independently of either level threshold.
+Each destination receives at most one copy. Important is a channel selection,
+not another severity level.
+
+=set_level(Level)= changes ordinary filtering. All macros short-circuit before
+evaluating arguments when no destination accepts a record. Before init and
+after close, macro calls also do not evaluate arguments. The facade adds no
+runtime forwarding layer; the component adds filtering, metadata and lifecycle
+coordination around the backend.
+
+Independent component features =level-<severity>= and =release-level-<severity>=
+forward backend compile-time filters. Facade equivalents are
+=log-level-<severity>= and =log-release-level-<severity>=; they do not implicitly
+enable the component. Severities are =off/critical/error/warn/info/debug/trace=.
+These filters affect important too, because its severity is info. Select one
+cutoff per feature family at the application boundary; Cargo feature unification
+means the final filter applies to all consumers of that backend instance.
+
+Async mode shares one backend queue and one worker across all destinations.
+Full queues block producers, including important callers. There is no
+intentional dropping or unbounded retry. Queue acceptance order is preserved;
+concurrent producers have no separate wall-clock ordering guarantee.
+
+Stop and join application producers, then call =guard.shutdown()=. It stops
+new acceptance, waits for in-flight formatting/submission, disables the periodic
+flusher, drains the queue, flushes outputs and joins workers. Concurrent/repeated
+shutdown waits for completion and returns any recorded output failure.
+=guard.flush()= submits a flush in async mode; it is not a completion barrier.
+Flush is a userspace buffer flush, not a filesystem fsync durability promise.
+
+Do not call shutdown from a log argument's formatting implementation: that
+invocation holds a submission ticket which shutdown must wait for. Drop performs
+best-effort shutdown without propagating a panic; explicit shutdown returns
+errors. First output failure is written directly to stderr without recursion;
+subsequent failures are counted and reported by flush/shutdown. Forced exit,
+abort and machine failure cannot guarantee draining.
+
+* Dependency boundary and validation
+
+Forge approves =spdlog-rs 0.5.3=, =chrono 0.4.45=, and the selected Serde/JSON
+versions. Cargo handles transitive resolution; the committed lockfile preserves
+it. Direct crates use MIT/Apache-2.0 dual-license metadata. Rust native C++
+dependencies and Conan are unnecessary here.
+
+Preserving caller source metadata uses the pinned backend's exported
+macro-support APIs internally. Dependency upgrades must rerun direct, facade,
+renamed-consumer and static-filter checks. No backend types leak through the
+supported application interface.
+
+See [[file:../../BUILD.org][commands]] and [[file:verification.org][actual results]].

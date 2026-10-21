@@ -1,0 +1,61 @@
+#+TITLE: zust v0.1.0 验证记录
+#+STARTUP: indent
+
+[[file:readme.org][文档首页]] | [[file:../en/verification.org][English]]
+
+* 已执行检查 — 2026-10-20
+
+本机为 Linux x86_64，内核 6.17.0-40-generic，Intel Core i7-11700，
+使用 Rust 1.97.1 和锁文件固定的依赖解析。以下结果针对当前未提交实现，
+不代表正式发布、下游验收或部署。
+
+- Forge 入口的 Debug/Release check 通过，覆盖两个 package 的格式、编译器和
+  Clippy 检查及其全部原生目标。
+- Forge 入口的 Debug/Release test 通过：门面 namespace 测试、组件四个单元测试、
+  三个配置测试，以及子进程驱动的十八个运行场景和额外的静态级别场景。
+- 运行场景覆盖同步/异步、important 独立输出和去重、动态过滤、110 个不重复短线程
+  编号、pattern/JSONL、源码位置、大小/启动轮转、路径展开、初始化失败重试、周期/
+  按级别刷新、在途/并发关闭、Drop 排空和真实异步轮转 I/O 失败。受控阻塞 sink
+  验证有界后端队列的阻塞背压和无丢失排空。
+- 显式通过 Debug level-warn、Release release-level-warn、Debug level-off
+  裁剪检查，包含 important 的 info 裁剪及参数不求值。
+- 独立重命名消费者的 Debug/Release 测试通过，验证共享类型、共享运行时和宏卫生。
+- 不启用 log 的门面 cargo check 通过，cargo tree 只有 zust，无组件依赖。
+  Rustdoc 在禁止警告下生成通过；两个可执行 Rustdoc 示例通过。
+- 项目的四个 CLI/版本/依赖契约测试通过；help/list/metadata/dry-run 不修改源码或
+  生成物，库不支持的动作明确失败。Forge 构建契约回归 20 项通过，Rust 治理回归
+  12 项通过。
+- 显式 logging 目标的 zbuild Debug/Release check/Clippy、build、test、run 以及
+  Debug dev 通过。Cargo example test 当前没有单元测试；独立命令
+  =python3 tests/check_logging_example.py -v= 验证 main、控制台/runtime/important
+  输出、从其他调用目录使用项目相对配置路径、运行参数不打印及 run 不改写产物。
+  配置与日志使用临时文件，完成后删除。Forge 回归覆盖缺失产物、先构建再运行、
+  参数透传、宿主后缀选择及配置冲突。共享 rebuild/clean 仅使用临时目录和 dry-run
+  验证，未清理真实工作区既有产物。
+- JSON fixture 于 2026-10-20 保留 zpp server 的 spd 配置及 zeta_trader
+  zeta_ctp_md 的 spd 配置；测试运行不依赖这些兄弟仓库。
+
+* 有界 Release 微基准
+
+命令：=cargo bench --locked -p zust-log --bench logging -- --run=。
+每组先预热 2,000 次，再采样 50,000 次单生产者调用。启用日志的两组使用相同后端
+大小轮转缓冲文件 sink 配置，只输出消息和换行，关闭周期/级别刷新，测量期间不轮转。
+最终刷新后比较两组完整输出一致；成功时删除本次基准独占的临时文件。
+
+| 场景 | 每秒调用数 | P50 ns | P99 ns |
+|------+------------+--------+--------|
+| 原生后端启用 | 6,229,905 | 135 | 245 |
+| zust 启用 | 3,421,618 | 265 | 323 |
+| 原生后端关闭 | 31,712,306 | 14 | 16 |
+| zust 关闭 | 29,997,510 | 16 | 22 |
+
+这是单次本机结果，不是统计性能保证；包含时钟采样和样本收集开销。启用时的差值
+包含元数据、通道路由、兼容格式化及生命周期协调。门面重导出自身不增加运行时工作。
+未测默认完整文本、important JSONL、异步吞吐、饱和延迟、fsync 或持续磁盘性能。
+默认正确性测试跳过性能测量。
+
+* 未执行边界
+
+未运行完整库交付 build/rebuild/install、下游迁移、长时间压力/浸泡测试、sanitizer、
+其他操作系统验证、发布或部署；未创建 commit/push。
+发布历史时间保持草稿，等待获授权的版本提交提供真实 UTC committer 时间。

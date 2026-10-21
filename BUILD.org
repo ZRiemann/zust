@@ -1,0 +1,122 @@
+#+TITLE: zust build and verification
+#+STARTUP: indent
+
+* Prerequisites and ownership
+
+Use a ZetaX workspace containing sibling =zust= and =zeta_forge= checkouts.
+Alternatively set =ZETAX_ROOT= to that workspace. The thin =zbuild.py= delegates
+to Forge's public build CLI and Rust engine; no Conan graph or native library
+is required. Rust =1.97.1= with rustfmt and Clippy must be installed beforehand.
+
+Forge approves exact direct-crate versions in its Rust catalog. zust owns the
+Cargo workspace, optional features, sources and committed lockfile. Members
+inherit third-party dependencies from the workspace. Commands use =--locked=;
+initial dependency resolution and future upgrades are explicit operations.
+
+* Deliverables and commands
+
+| Target | Package / library | Feature selection |
+|--------+-------------------+-------------------|
+| zust | zust / z | log |
+| zust-log | zust-log / zust_log | component defaults |
+| logging (explicit example) | zust / example logging | log |
+
+#+begin_src sh
+./zbuild.py --help
+./zbuild.py list
+./zbuild.py doctor
+./zbuild.py metadata zust zust-log
+./zbuild.py check --profile debug
+./zbuild.py test --profile debug
+./zbuild.py test --profile release
+./zbuild.py build --dry-run
+# Explicit full library delivery, when requested:
+./zbuild.py build
+#+end_src
+
+Default profile is release. Default build selects the facade with =log=;
+check/test default to both packages. Cargo still owns the native dependency
+graph. check performs format/compiler/Clippy checks and does not run tests.
+Tests compile only the selected native correctness targets; the benchmark
+executable skips performance measurement unless explicitly passed =--run=.
+The two libraries have no run/dev/install actions. The =logging= Cargo example
+is a separate, explicit target; it is excluded from the default target selection.
+
+All generated output belongs to =build/cargo=. Debug uses =debug/= and release
+uses =release/=. =clean= and =rebuild= affect the selected workspace/profile,
+including sibling library and example outputs within that profile; the other
+profile is preserved. Dry-run lists affected targets, artifacts and cleanup
+paths. fetch acquires locked dependencies without upgrading them.
+
+* Logging example
+
+Run these commands from the repository root. =logging= supports doctor, check,
+build, rebuild, test, run, dev, clean and fetch; it has no install action.
+
+#+begin_src sh
+./zbuild.py metadata logging
+./zbuild.py check logging --profile debug
+./zbuild.py build logging --profile debug
+./zbuild.py test logging --profile debug
+./zbuild.py run logging --profile debug
+./zbuild.py run logging --profile debug -- doc/server.json example
+./zbuild.py dev logging --profile debug -- doc/server.json example
+# Default profile is release:
+./zbuild.py build logging
+./zbuild.py run logging
+# Inspect shared profile cleanup without removing existing outputs:
+./zbuild.py rebuild logging --profile debug --dry-run
+./zbuild.py clean logging --profile debug --dry-run
+#+end_src
+
+=run= requires an existing executable and never builds; a missing output fails
+clearly. =dev= builds and then runs once. There is no implicit run/dev target.
+Arguments after =--= are forwarded unchanged and omitted from build logs.
+The example accepts an optional configuration file and section name together;
+without them it uses synchronous console output only.
+
+The executable is =build/cargo/debug/examples/logging= or
+=build/cargo/release/examples/logging= (=.exe= on Windows). Its working directory
+is always the repository root, including when zbuild is invoked from elsewhere.
+Configuration paths and relative log paths resolve from that directory.
+=doc/server.json= uses =${ZETAX_ROOT}/logs/zust/= and startup rotation; choose a
+separate configuration with your own paths when experimenting with file output.
+
+Cargo remains the native engine and =examples/logging.rs= remains a normal
+Cargo example. Example build/check/Clippy/test select =--example logging= with
+=--features log=; checks/tests do not also select =--all-targets=.
+=check= retains the workspace-wide read-only formatting check. Cargo example
+=test= checks its native test harness; the explicit smoke test below verifies
+the example's main function and file output in both profiles using temporary
+configuration and logs:
+
+#+begin_src sh
+python3 tests/check_logging_example.py -v
+#+end_src
+
+This smoke test explicitly builds the example in Debug and Release, verifies
+console/runtime/important output, and exercises =dev= in Debug. It does not
+run during the default lightweight Python contract suite.
+
+* Additional focused checks
+
+#+begin_src sh
+python3 -m unittest discover -s tests -p 'test_build_contract.py'
+cargo check --locked -p zust --no-default-features
+cargo tree --locked -p zust --no-default-features --edges normal
+cargo test --locked --manifest-path tests/consumer/Cargo.toml
+cargo test --locked --release --manifest-path tests/consumer/Cargo.toml
+cargo test --locked -p zust-log --test runtime --features level-warn -- static_levels --exact
+cargo test --locked -p zust-log --test runtime --release --features release-level-warn -- static_levels --exact
+cargo test --locked -p zust --features log --doc
+cargo test --locked -p zust-log --doc
+# Explicit bounded performance workflow:
+cargo bench --locked -p zust-log --bench logging -- --run
+#+end_src
+
+The standalone renamed-consumer fixture has its own lockfile. It verifies that
+renaming both packages preserves macro hygiene, type identity and one shared
+runtime. Normal facade builds do not depend on this fixture.
+
+See [[file:doc/en/verification.org][executed verification and limits]]. Full builds,
+long-running load tests, deployment and other-platform acceptance are separate.

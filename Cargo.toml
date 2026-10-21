@@ -1,0 +1,54 @@
+[workspace]
+members = ["crates/zust-log"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "Apache-2.0"
+repository = "https://github.com/ZRiemann/zust"
+
+[workspace.dependencies]
+zust-log = { path = "crates/zust-log", version = "=0.1.0" }
+spdlog-rs = { version = "=0.5.3", features = ["multi-thread", "source-location"] }
+chrono = { version = "=0.4.45", default-features = false, features = ["clock", "std"] }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.151"
+
+[package]
+name = "zust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared Rust components for ZetaX, exposed through z::xxx"
+
+[lib]
+name = "z"
+
+[features]
+default = []
+log = ["dep:zust-log"]
+log-level-off = ["zust-log?/level-off"]
+log-level-critical = ["zust-log?/level-critical"]
+log-level-error = ["zust-log?/level-error"]
+log-level-warn = ["zust-log?/level-warn"]
+log-level-info = ["zust-log?/level-info"]
+log-level-debug = ["zust-log?/level-debug"]
+log-level-trace = ["zust-log?/level-trace"]
+log-release-level-off = ["zust-log?/release-level-off"]
+log-release-level-critical = ["zust-log?/release-level-critical"]
+log-release-level-error = ["zust-log?/release-level-error"]
+log-release-level-warn = ["zust-log?/release-level-warn"]
+log-release-level-info = ["zust-log?/release-level-info"]
+log-release-level-debug = ["zust-log?/release-level-debug"]
+log-release-level-trace = ["zust-log?/release-level-trace"]
+
+[dependencies]
+zust-log = { workspace = true, optional = true }
+
+[[example]]
+name = "logging"
+required-features = ["log"]
