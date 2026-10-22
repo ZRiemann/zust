@@ -3,6 +3,24 @@
 
 * Releases
 
+** v0.4.0 - 2026-10-22T07:19:22Z
+:PROPERTIES:
+:CUSTOM_ID: v0.4.0
+:END:
+
+Add optional tracing integration and explicitly versioned JSONL diagnostics.
+
+*** Changes
+- Add optional log-tracing and init_tracing with one global subscriber and the existing output runtime.
+- Add opt-in jsonl-v2 with UTC timestamps, accurate source/thread metadata, typed fields and root-to-leaf span context; retain legacy JSONL and native macros.
+- Preserve original framework source locations, filtering, parent relationships and recorded field updates across asynchronous output.
+- Synchronize root and Cargo versions and extend renamed-consumer and configuration documentation.
+
+*** Verification
+- Debug/Release component suites passed 13 harness tests, including isolated tracing scenarios; renamed consumer and static-level checks passed in both profiles.
+- Debug/Release Clippy with warnings denied, formatting and no-default-features checks passed.
+- No performance matrix, full delivery build/install, browser, other-OS, sanitizer or soak validation was performed.
+
 ** v0.3.0 - 2026-10-22T06:08:42Z
 :PROPERTIES:
 :CUSTOM_ID: v0.3.0

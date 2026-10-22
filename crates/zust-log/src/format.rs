@@ -1,6 +1,7 @@
 use crate::{Config, Error, Level, Result, config::DEFAULT_PATTERN};
 use chrono::{DateTime, Datelike, Local, Timelike};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value, json};
 use spdlog::{
     Record, StringBuf,
     formatter::{Formatter, FormatterContext},
@@ -118,7 +119,10 @@ impl Formatter for TextFormatter {
         dest: &mut StringBuf,
         ctx: &mut FormatterContext,
     ) -> spdlog::Result<()> {
-        self.render(&Meta::from_record(record), dest, ctx)
+        let message = contextual_message(record);
+        let mut meta = Meta::from_record(record);
+        meta.message = &message;
+        self.render(&meta, dest, ctx)
             .map_err(spdlog::Error::FormatRecord)
     }
 }
@@ -167,6 +171,7 @@ pub(crate) struct JsonFormatter {
     service: String,
     node: String,
     run_id: String,
+    v2: bool,
 }
 #[derive(Serialize)]
 struct JsonLine<'a> {
@@ -191,6 +196,7 @@ impl JsonFormatter {
             service: cfg.service.clone(),
             node: cfg.node.clone(),
             run_id: cfg.run_id.clone(),
+            v2: cfg.important.format == crate::SinkFormat::JsonlV2,
         }
     }
     fn render(&self, meta: &Meta<'_>, dest: &mut StringBuf) -> spdlog::Result<()> {
@@ -218,6 +224,31 @@ impl JsonFormatter {
         Ok(())
     }
 }
+/// Owned tracing data survives the asynchronous backend's record cloning.
+#[derive(Default, Serialize, Deserialize)]
+pub(crate) struct Diagnostics {
+    pub target: String,
+    pub fields: Map<String, Value>,
+    pub spans: Vec<Value>,
+}
+fn contextual_message<'a>(record: &'a Record<'_>) -> std::borrow::Cow<'a, str> {
+    let value = record
+        .key_values()
+        .get(spdlog::kv::Key::__from_static_str("zust_diagnostics"));
+    if let Some(value) = value.and_then(|value| value.to_str())
+        && !value.is_empty()
+    {
+        return format!("{} {}", record.payload(), value).into();
+    }
+    record.payload().into()
+}
+fn diagnostics(record: &Record) -> Option<Diagnostics> {
+    let value = record
+        .key_values()
+        .get(spdlog::kv::Key::__from_static_str("zust_diagnostics"))?;
+    let value = value.to_str()?;
+    serde_json::from_str(&value).ok()
+}
 impl Formatter for JsonFormatter {
     fn format(
         &self,
@@ -225,9 +256,72 @@ impl Formatter for JsonFormatter {
         dest: &mut StringBuf,
         _: &mut FormatterContext,
     ) -> spdlog::Result<()> {
-        self.render(&Meta::from_record(record), dest)
+        let meta = Meta::from_record(record);
+        if !self.v2 {
+            let message = contextual_message(record);
+            let mut meta = meta;
+            meta.message = &message;
+            return self.render(&meta, dest);
+        }
+        let (component, action) = tags(meta.message);
+        let message = if component.is_empty() {
+            meta.message
+        } else {
+            meta.message
+                .split_once(']')
+                .map_or(meta.message, |(_, rest)| rest.trim_start())
+        };
+        let diagnostic = diagnostics(record);
+        let target = diagnostic
+            .as_ref()
+            .map_or(meta.function, |value| value.target.as_str());
+        let mut line = json!({
+            "schema_version": 2,
+            "ts": meta.time.to_utc().format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string(),
+            "level": meta.level.name(), "service": self.service,
+            "pid": std::process::id(), "thread_index": meta.tid,
+            "target": target, "message": message,
+        });
+        let object = line.as_object_mut().expect("JSON object literal");
+        for (key, value) in [
+            ("node", self.node.as_str()),
+            ("run_id", self.run_id.as_str()),
+            ("component", component.as_str()),
+            ("action", action),
+        ] {
+            if !value.is_empty() {
+                object.insert(key.into(), value.into());
+            }
+        }
+        let mut source = Map::new();
+        if !meta.file.is_empty() {
+            source.insert("file".into(), meta.file.into());
+        }
+        if meta.line != 0 {
+            source.insert("line".into(), meta.line.into());
+        }
+        if !meta.function.is_empty() {
+            source.insert("module_path".into(), meta.function.into());
+        }
+        if !source.is_empty() {
+            object.insert("source".into(), source.into());
+        }
+        if let Some(value) = diagnostic {
+            if !value.fields.is_empty() {
+                object.insert("fields".into(), value.fields.into());
+            }
+            if !value.spans.is_empty() {
+                object.insert("spans".into(), value.spans.into());
+            }
+        }
+        let json = serde_json::to_string(&line)
+            .map_err(|error| spdlog::Error::Downstream(Box::new(error)))?;
+        dest.push_str(&json);
+        dest.push('\n');
+        Ok(())
     }
 }
+
 fn tags(message: &str) -> (String, &str) {
     let empty = (String::new(), "");
     if !message.starts_with('[') {
@@ -320,7 +414,8 @@ mod tests {
         .unwrap();
         assert_eq!(output.lines().count(), 1);
         let json: serde_json::Value = serde_json::from_str(&output).unwrap();
-        assert_eq!(json.as_object().unwrap().len(), 14);
+        assert!(json.get("schema_version").is_none());
+        assert_eq!(json["function"], "app::worker");
         assert_eq!(json["component"], "nng.socket");
         assert_eq!(json["action"], "create");
         assert_eq!(json["message"], meta().message);

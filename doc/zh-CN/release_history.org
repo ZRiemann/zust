@@ -3,6 +3,24 @@
 
 * 发布记录
 
+** v0.4.0 - 2026-10-22T07:19:22Z
+:PROPERTIES:
+:CUSTOM_ID: v0.4.0
+:END:
+
+新增可选 tracing 接入和显式版本化 JSONL 诊断。
+
+*** 变更
+- 新增可选 log-tracing 与 init_tracing，唯一全局 subscriber 复用原有日志运行时。
+- 新增显式 jsonl-v2：UTC 时间、准确源码与线程元数据、类型化字段及根到叶 span 上下文；保留旧 JSONL 与原生宏。
+- 异步输出保留框架原始位置、过滤、父关系与已更新字段。
+- 同步根版本与 Cargo 版本，扩展重命名消费者覆盖和配置文档。
+
+*** 验证
+- Debug/Release 组件各 13 项 harness 测试通过，覆盖隔离 tracing 场景；两种 profile 的重命名消费者与静态级别检查通过。
+- 两种 profile 的 Clippy（禁止警告）、格式检查及无默认 feature 检查通过。
+- 未执行性能矩阵、完整交付构建/安装、浏览器、其他 OS、sanitizer 或 soak 验证。
+
 ** v0.2.0 - 2026-10-21T12:47:12Z
 :PROPERTIES:
 :CUSTOM_ID: v0.2.0

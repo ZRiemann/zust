@@ -3,14 +3,16 @@ members = ["crates/zust-log"]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.0"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.97"
 license = "Apache-2.0"
 repository = "https://github.com/ZRiemann/zust"
 
 [workspace.dependencies]
-zust-log = { path = "crates/zust-log", version = "=0.2.0" }
+tracing = "=0.1.44"
+tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["registry", "env-filter", "std"] }
+zust-log = { path = "crates/zust-log", version = "=0.4.0" }
 spdlog-rs = { version = "=0.5.3", features = ["multi-thread", "source-location"] }
 chrono = { version = "=0.4.45", default-features = false, features = ["clock", "std"] }
 serde = { version = "=1.0.229", features = ["derive"] }
@@ -31,6 +33,7 @@ name = "z"
 [features]
 default = []
 log = ["dep:zust-log"]
+log-tracing = ["log", "zust-log/tracing"]
 log-level-off = ["zust-log?/level-off"]
 log-level-critical = ["zust-log?/level-critical"]
 log-level-error = ["zust-log?/level-error"]

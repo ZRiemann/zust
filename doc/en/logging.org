@@ -242,3 +242,43 @@ The Stats type and stats() API have been removed, with no compatibility stub.
 There are no automatic overflow summaries or separate reliable control channel.
 Stop using stats() in consumers; use shutdown() when output completion matters.
 Important logging remains diagnostic, not durable audit storage.
+
+* JSONL v2 and tracing integration
+
+=important.format = "jsonl"= retains the existing zpp-compatible record. Select
+="jsonl-v2"= explicitly (programmatic =SinkFormat::JsonlV2=) for the new schema.
+A missing =schema_version= identifies a legacy record; version 2 is independent
+of application release numbers. C++ zpp output is unchanged.
+
+Required v2 keys are =schema_version= (2), =ts= (UTC RFC 3339 with six fractional
+digits and Z), =level= (lowercase), =service=, =pid=, =thread_index=, =target= and
+=message=. Time and thread information belong to the producer, not the worker.
+The thread index is process-local and is neither an OS TID nor an async task ID.
+
+Optional =source= contains known =file=, =line= and =module_path=; unknown values
+are omitted. There is no misleading Rust =function= field or output =logger=.
+Text patterns and logger configuration remain available. Nonempty =node= and
+caller-supplied =run_id= are retained, without generating or replacing run IDs.
+Valid message tags populate =component/action= and are removed from the v2
+message; untagged messages remain unchanged. Native targets use the module path.
+
+Enable facade =log-tracing= (component =tracing=), initialize logging, then call
+=z::log::init_tracing("warn,dioxus_core=info,dioxus_desktop=info")= before launching
+the application. Invalid filters, missing/closed logging and an already installed
+subscriber return errors. The explicit filter does not read RUST_LOG.
+Native logging macros keep their existing API and bypass tracing entirely.
+
+Framework =fields= is a nested object excluding message. =spans= follows the
+event's explicit or contextual parent chain from root to leaf, with name, target
+and fields per span. Recorded updates and cross-thread instrumented context are
+preserved even when the span's own target/level does not enable event output.
+Empty fields/spans are omitted; no automatic span-enter/exit events are emitted.
+Numbers, booleans and strings preserve JSON types; Debug/Display values,
+out-of-range integers and nonfinite floats use strings. No distributed trace
+IDs are invented. Both the tracing filter and native runtime threshold apply.
+Text and legacy JSONL retain framework context as a compact diagnostic suffix;
+v2 stores the same information directly as objects, without double encoding.
+
+All inputs share the existing bounded queue and shutdown policy. Stop and join
+application producers before shutdown; async flush remains a droppable request.
+Traces and important records remain diagnostics, not durable audit evidence.

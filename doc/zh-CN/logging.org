@@ -207,3 +207,32 @@ Forge 批准 =spdlog-rs 0.5.3=、=chrono 0.4.45= 及所选 Serde/JSON 版本，C
 删除 Stats 类型和 stats() 接口，不保留兼容空实现；不再自动输出过载汇总，也没有
 单独的可靠控制通道。调用方应移除 stats() 使用，需要确认输出完成时调用 shutdown()。
 important 继续用于诊断，不能替代持久化审计。
+
+* JSONL v2 与 tracing 接入
+
+=important.format = "jsonl"= 保留现有 zpp 兼容记录；显式选择 ="jsonl-v2"=
+（程序接口 =SinkFormat::JsonlV2=）启用新格式。无 =schema_version= 表示旧记录；
+格式版本 2 独立于应用版本。C++ zpp 输出不变。
+
+必填键为 =schema_version=（2）、=ts=（UTC RFC 3339、六位小数与 Z）、小写
+=level=、=service=、=pid=、=thread_index=、=target=、=message=。
+时间和线程信息来自生产者；thread_index 是进程内短编号，不是 OS TID 或异步任务 ID。
+=source= 按实际信息包含 =file/line/module_path=，未知项省略，不再将 Rust 模块路径
+称为 function，也不输出 logger；文本 pattern 和 logger 配置功能保留。
+非空 =node/run_id= 原样保留，不自动生成或替换运行标识。合法标签提取到
+=component/action= 并从 v2 message 去掉；原生 target 默认是模块路径。
+
+门面启用 =log-tracing=（组件启用 =tracing=），初始化日志后、启动应用前调用
+=z::log::init_tracing("warn,dioxus_core=info,dioxus_desktop=info")=。
+非法过滤、未初始化/已关闭日志或已有全局 subscriber 均返回错误，不读取 RUST_LOG。
+原生宏保持 API，直接进入原有日志运行时。
+
+框架事件的 =fields= 是排除 message 的对象；=spans= 按事件显式或当前父链从根到叶
+保存 name、target、fields，保留字段更新和跨线程显式传递的上下文。即使 span 自身
+级别/target 不启用事件输出，也保留所需上下文。空 fields/spans 省略，不自动输出
+span 进入/退出事件。数字、布尔、字符串保留 JSON 类型；Debug/Display、超范围整数
+及非有限浮点值保存为字符串。不伪造分布式 ID。事件同时遵守框架过滤和 runtime 阈值。
+文本与旧 JSONL 在框架消息后附加紧凑诊断上下文；v2 直接保存对象，不重复转义。
+
+两种入口共享原有有界队列和关闭策略。先停止并 join 应用生产者，再 shutdown；异步
+flush 仍是可丢弃请求。tracing 和 important 均不能充当持久化审计。

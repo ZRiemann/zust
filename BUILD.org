@@ -133,3 +133,11 @@ or redeployment is implied by another project's upgrade. Record the application
 commit, Forge release and commit, toolchain and lockfile when releasing.
 See [[file:../zeta_forge/doc/en/rust_workspace.org][Forge Rust governance]] for
 coordinated upgrades, cache preparation and the explicit zust consumer test.
+
+* Optional tracing and versioned JSON verification
+
+The default log-only dependency remains free of tracing. Verify the optional
+component with =cargo test --locked --offline -p zust-log --features tracing --lib --tests=
+and the same command with =--release=. Check the facade with
+=cargo clippy --locked --offline --all-targets --features log-tracing -- -D warnings=.
+The renamed consumer enables log-tracing and verifies the public adapter API.

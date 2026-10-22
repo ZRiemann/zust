@@ -14,6 +14,10 @@
 mod config;
 mod format;
 mod runtime;
+#[cfg(feature = "tracing")]
+mod tracing_adapter;
+#[cfg(feature = "tracing")]
+pub use tracing_adapter::init_tracing;
 
 pub use config::{Config, ImportantConfig, SinkFormat};
 pub use runtime::{LogGuard, init, set_level};

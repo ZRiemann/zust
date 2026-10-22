@@ -310,7 +310,9 @@ fn prepare(config: Config) -> Result<Runtime> {
             .map_err(|e| Error::config("spd.important.name", e))?;
         use spdlog::sink::SinkPropAccess;
         match config.important.format {
-            SinkFormat::Jsonl => sink.set_formatter(Box::new(JsonFormatter::new(&config))),
+            SinkFormat::Jsonl | SinkFormat::JsonlV2 => {
+                sink.set_formatter(Box::new(JsonFormatter::new(&config)))
+            }
             SinkFormat::Pattern => sink.set_formatter(Box::new(imp_text)),
         }
         Some(sink)
@@ -372,6 +374,21 @@ fn asynchronous(
     Ok(sink as Arc<dyn Sink>)
 }
 
+#[cfg(feature = "tracing")]
+pub(crate) fn initialized() -> bool {
+    GLOBAL
+        .get()
+        .is_some_and(|runtime| runtime.enabled.load(Ordering::Acquire))
+}
+
+#[cfg(feature = "tracing")]
+pub(crate) fn accepts(level: Level) -> bool {
+    spdlog::STATIC_LEVEL_FILTER.test(level.backend())
+        && GLOBAL.get().is_some_and(|runtime| {
+            runtime.enabled.load(Ordering::Acquire) && runtime.accepts(level, false)
+        })
+}
+
 /// Set the ordinary channel's level. The explicit important channel is independent.
 /// Before initialization or after shutdown this has no observable effect.
 pub fn set_level(level: Level) {
@@ -419,6 +436,9 @@ pub fn acquire(level: Level, important: bool) -> Option<Ticket> {
 impl Ticket {
     /// Submit to the backend with original caller metadata.
     pub fn emit(self, args: fmt::Arguments<'_>, source: Source) {
+        self.emit_record(args, source, "");
+    }
+    pub(crate) fn emit_record(self, args: fmt::Arguments<'_>, source: Source, diagnostics: &str) {
         let active = self.state.as_ref().expect("ticket holds an active runtime");
         // spdlog-rs 0.5.3's exported macro support entry point allows preserving
         // source location without a second formatting pass or message prefixes.
@@ -433,6 +453,10 @@ impl Ticket {
                 0,
             )),
             &[
+                (
+                    spdlog::kv::Key::__from_static_str("zust_diagnostics"),
+                    diagnostics.into(),
+                ),
                 (
                     spdlog::kv::Key::__from_static_str("zust_tid"),
                     short_tid().into(),

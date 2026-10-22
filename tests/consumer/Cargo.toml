@@ -7,5 +7,5 @@ edition = "2024"
 publish = false
 
 [dependencies]
-zetax = { package = "zust", path = "../..", features = ["log"] }
+zetax = { package = "zust", path = "../..", features = ["log", "log-tracing"] }
 component = { package = "zust-log", path = "../../crates/zust-log" }

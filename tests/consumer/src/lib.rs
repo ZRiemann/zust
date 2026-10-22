@@ -11,6 +11,7 @@ fn renamed_facade_and_component_share_types_macros_and_runtime() {
         ..Default::default()
     };
     let guard = zetax::log::init(cfg).unwrap();
+    zetax::log::init_tracing("warn").unwrap();
     zetax::log::info!("facade {}", 1);
     component::info!("component {}", 2);
     assert!(matches!(

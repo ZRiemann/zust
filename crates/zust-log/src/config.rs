@@ -12,6 +12,8 @@ pub enum SinkFormat {
     Pattern,
     /// Serialize one zpp-compatible JSON object per line.
     Jsonl,
+    /// Versioned structured diagnostics with UTC timestamps and tracing context.
+    JsonlV2,
 }
 
 /// Independent important file configuration; sizes are MiB and backup counts.
@@ -188,10 +190,11 @@ impl Config {
             imp.format = match format.as_str() {
                 "pattern" => SinkFormat::Pattern,
                 "jsonl" => SinkFormat::Jsonl,
+                "jsonl-v2" => SinkFormat::JsonlV2,
                 _ => {
                     return Err(Error::config(
                         format!("{field}.format"),
-                        "expected pattern or jsonl",
+                        "expected pattern, jsonl or jsonl-v2",
                     ));
                 }
             };
