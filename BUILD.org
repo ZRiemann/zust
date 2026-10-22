@@ -120,3 +120,16 @@ runtime. Normal facade builds do not depend on this fixture.
 
 See [[file:doc/en/verification.org][executed verification and limits]]. Full builds,
 long-running load tests, deployment and other-platform acceptance are separate.
+
+* Forge dependency release compatibility
+
+This development line uses Forge's single-version Rust catalog: Serde =1.0.229=
+and Tokio =1.54.0= where used. Keep workspace declarations and Cargo.lock aligned
+with the selected Forge checkout for directly used dependencies. Purely indirect
+version differences are reported and checked by Cargo and focused target checks. From Forge run =./zbuild.py doctor rust-deps= and
+=./zbuild.py check rust-deps= for the registered workspace-wide audit.
+Stable releases retain their matching Forge release/tag; no dependency upgrade
+or redeployment is implied by another project's upgrade. Record the application
+commit, Forge release and commit, toolchain and lockfile when releasing.
+See [[file:../zeta_forge/doc/en/rust_workspace.org][Forge Rust governance]] for
+coordinated upgrades, cache preparation and the explicit zust consumer test.

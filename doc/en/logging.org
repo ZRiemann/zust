@@ -203,7 +203,8 @@ Stop and join application producers, then call =guard.shutdown()=. It stops
 new acceptance, waits for in-flight formatting/submission, disables the periodic
 flusher, drains the queue, flushes outputs and joins workers. Concurrent/repeated
 shutdown waits for completion and returns any recorded output failure.
-=guard.flush()= submits a flush in async mode; it is not a completion barrier.
+=guard.flush()= submits a flush in async mode; the request may drop when the
+queue is full and is not a completion barrier.
 Flush is a userspace buffer flush, not a filesystem fsync durability promise.
 
 Do not call shutdown from a log argument's formatting implementation: that
@@ -228,17 +229,16 @@ supported application interface.
 See [[file:../../BUILD.org][commands]] and [[file:verification.org][actual results]].
 
 
-* Async overflow counters and controls
+* Nonblocking scope
 
-=stats().dropped= counts rejected data queue records, not calls or sink lines.
-It is zero before initialization and retained after shutdown. Capacity drops
-are not output failures; actual channel disconnection and I/O errors still fail
-lifecycle operations. Important is diagnostic, never durable audit storage.
-The worker writes a direct warn summary with =dropped_delta/dropped_total/queue_size=
-on first observed loss and at most every five seconds thereafter; shutdown
-reports any remaining delta. Summaries bypass the queue and data counters.
-Severity-triggered flushing runs on the worker. Explicit flush reliably enters
-the queue, may wait for capacity, and remains request-only. Shutdown drains all
-accepted records, joins, reports pending loss and flushes the outputs. No
-producer-side stderr is used for capacity drops. Existing JSON/config stays valid;
-there is no overflow policy option.
+A single native AsyncPoolSink uses DropIncoming for data and explicit flush
+requests. Capacity drops are ignored without stderr output or output-failure
+state; disconnected channels and real output errors retain their error path.
+Severity-triggered flushing runs in the existing router on the worker. Shutdown
+uses native drain/join and a final synchronous flush. Formatting, allocation and
+mutexes still occur; this is not a lock-free or real-time guarantee.
+
+The Stats type and stats() API have been removed, with no compatibility stub.
+There are no automatic overflow summaries or separate reliable control channel.
+Stop using stats() in consumers; use shutdown() when output completion matters.
+Important logging remains diagnostic, not durable audit storage.

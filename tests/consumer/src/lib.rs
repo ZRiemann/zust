@@ -24,8 +24,3 @@ fn renamed_facade_and_component_share_types_macros_and_runtime() {
     );
     std::fs::remove_file(path).unwrap();
 }
-
-#[test]
-fn overflow_stats_are_shared_by_facade_and_component() {
-    assert_eq!(zetax::log::stats().dropped, component::stats().dropped);
-}

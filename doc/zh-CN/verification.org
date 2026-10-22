@@ -76,3 +76,17 @@
   Clippy（警告视为错误）通过；门面单元选择及门面/组件两个可执行文档示例通过。
 - 未执行完整交付构建、下游应用运行、sanitizer、长时间压测或性能对比；原生基准
   仍为同步基准。
+
+* 最小非阻塞实现 — 2026-10-22
+
+当前实现删除 Stats/stats()、溢出汇总和双异步数据/控制适配器，使用一个原生
+AsyncPoolSink 配置 DropIncoming，仅忽略满容量的数据/flush 丢弃。按级别刷新
+合入 Router，shutdown 保留原生排空/join/最终刷新；显式异步 flush 可丢弃且非
+完成屏障。前文是历史实现的验证记录，不代表当前接口。
+
+Rust 1.97.1、--locked --offline：Debug/Release 组件测试通过（5 个单元、3 个
+配置、3 个集成测试入口；runtime_scenarios 覆盖 19 个运行子场景），重命名消费者
+两种配置各 1/1。Debug level-warn、Release release-level-warn 过滤通过。
+Clippy --all-targets -D warnings、workspace/consumer 格式检查通过；既有 logging
+示例两种配置 check 通过。并发场景要求 stderr 为空；真实输出故障和通道断开仍
+报告错误。未运行性能矩阵、全量构建、安装或部署；验证期间保留原暂存内容。

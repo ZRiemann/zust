@@ -19,7 +19,7 @@ use std::{
         Arc, Mutex, OnceLock, RwLock, RwLockReadGuard,
         atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering},
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 static GLOBAL: OnceLock<Runtime> = OnceLock::new();
@@ -43,6 +43,15 @@ struct Errors {
     first: Mutex<Option<String>>,
 }
 impl Errors {
+    fn backend(&self, error: spdlog::Error) {
+        // Native DropIncoming reports full-capacity data/flush drops as errors.
+        if !matches!(
+            error,
+            spdlog::Error::SendToChannel(spdlog::error::SendToChannelError::Full, _)
+        ) {
+            self.report(error);
+        }
+    }
     fn report(&self, error: impl ToString) {
         let mut first = self.first.lock().unwrap_or_else(|e| e.into_inner());
         self.count.fetch_add(1, Ordering::Relaxed);
@@ -68,160 +77,11 @@ impl Errors {
     }
 }
 
-/// Rejected data records; snapshots remain available after shutdown.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct Stats {
-    /// Records dropped because the asynchronous queue was full.
-    pub dropped: u64,
-}
-
-/// Read the current runtime's counters, or zero before initialization.
-pub fn stats() -> Stats {
-    Stats {
-        dropped: GLOBAL
-            .get()
-            .map_or(0, |r| r.overflow.dropped.load(Ordering::Relaxed)),
-    }
-}
-
-#[derive(Default)]
-struct Report {
-    total: u64,
-    last: Option<Instant>,
-}
-impl Report {
-    fn delta(&mut self, total: u64, now: Instant, force: bool) -> Option<u64> {
-        if total == self.total
-            || (!force
-                && self
-                    .last
-                    .is_some_and(|last| now.duration_since(last) < Duration::from_secs(5)))
-        {
-            return None;
-        }
-        let delta = total - self.total;
-        self.total = total;
-        self.last = Some(now);
-        Some(delta)
-    }
-}
-#[derive(Default)]
-struct Overflow {
-    dropped: AtomicU64,
-    report: Mutex<Report>,
-}
-struct WorkerSink {
-    prop: SinkProp,
-    root: Arc<dyn Sink>,
-    reporter: spdlog::Logger,
-    overflow: Arc<Overflow>,
-    capacity: usize,
-    flush_level: Level,
-    important_level: Level,
-}
-impl WorkerSink {
-    fn report(&self, force: bool) {
-        let total = self.overflow.dropped.load(Ordering::Relaxed);
-        let delta = self
-            .overflow
-            .report
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .delta(total, Instant::now(), force);
-        if let Some(delta) = delta {
-            spdlog::__log(
-                &self.reporter,
-                spdlog::Level::Warn,
-                None,
-                &[
-                    (
-                        spdlog::kv::Key::__from_static_str("zust_runtime"),
-                        true.into(),
-                    ),
-                    (
-                        spdlog::kv::Key::__from_static_str("zust_important"),
-                        (self.important_level <= Level::Warn).into(),
-                    ),
-                    (
-                        spdlog::kv::Key::__from_static_str("zust_tid"),
-                        short_tid().into(),
-                    ),
-                ],
-                format_args!(
-                    "[logging:overflow] dropped_delta={delta} dropped_total={total} queue_size={}",
-                    self.capacity
-                ),
-            );
-        }
-    }
-}
-impl GetSinkProp for WorkerSink {
-    fn prop(&self) -> &SinkProp {
-        &self.prop
-    }
-}
-impl Sink for WorkerSink {
-    fn log(&self, record: &Record) -> spdlog::Result<()> {
-        let mut errors = Vec::new();
-        if let Err(e) = self.root.log(record) {
-            errors.push(e);
-        }
-        self.report(false);
-        if self.flush_level != Level::Off
-            && Level::from_backend(record.level()) >= self.flush_level
-            && let Err(e) = self.root.flush()
-        {
-            errors.push(e);
-        }
-        combine(errors)
-    }
-    fn flush(&self) -> spdlog::Result<()> {
-        self.report(false);
-        self.root.flush()
-    }
-    fn flush_on_exit(&self) -> spdlog::Result<()> {
-        self.report(true);
-        self.root.flush_on_exit()
-    }
-}
-
-// Two policies share one pool. Only data admission can fail due to capacity.
-struct AsyncBackend {
-    prop: SinkProp,
-    data: Arc<AsyncPoolSink>,
-    control: Arc<AsyncPoolSink>,
-    overflow: Arc<Overflow>,
-}
-impl GetSinkProp for AsyncBackend {
-    fn prop(&self) -> &SinkProp {
-        &self.prop
-    }
-}
-impl Sink for AsyncBackend {
-    fn log(&self, record: &Record) -> spdlog::Result<()> {
-        match self.data.log(record) {
-            Err(spdlog::Error::SendToChannel(
-                spdlog::error::SendToChannelError::Full,
-                spdlog::error::SendToChannelErrorDropped::Record(_),
-            )) => {
-                self.overflow.dropped.fetch_add(1, Ordering::Relaxed);
-                Ok(())
-            }
-            other => other,
-        }
-    }
-    fn flush(&self) -> spdlog::Result<()> {
-        self.control.flush()
-    }
-    fn flush_on_exit(&self) -> spdlog::Result<()> {
-        self.data.flush_on_exit()
-    }
-}
-
 struct Router {
     prop: SinkProp,
     runtime: Vec<Arc<dyn Sink>>,
     important: Option<Arc<dyn Sink>>,
+    async_flush_level: Level,
 }
 impl GetSinkProp for Router {
     fn prop(&self) -> &SinkProp {
@@ -251,6 +111,12 @@ impl Sink for Router {
         {
             errors.push(error);
         }
+        if self.async_flush_level != Level::Off
+            && Level::from_backend(record.level()) >= self.async_flush_level
+            && let Err(error) = self.flush()
+        {
+            errors.push(error);
+        }
         combine(errors)
     }
     fn flush(&self) -> spdlog::Result<()> {
@@ -275,7 +141,6 @@ struct Runtime {
     has_important: bool,
     active: RwLock<Option<Active>>,
     errors: Arc<Errors>,
-    overflow: Arc<Overflow>,
 }
 impl Runtime {
     fn accepts_runtime(&self, level: Level) -> bool {
@@ -313,7 +178,7 @@ pub struct LogGuard {
     runtime: &'static Runtime,
 }
 impl LogGuard {
-    /// Submit a flush. In async mode, success is not a completion barrier.
+    /// Submit a flush. Async requests may drop when full and are not completion barriers.
     /// Previously observed output failures are returned when available.
     pub fn flush(&self) -> Result<()> {
         let state = self
@@ -456,24 +321,21 @@ fn prepare(config: Config) -> Result<Runtime> {
         prop: SinkProp::default(),
         runtime: sinks,
         important,
+        async_flush_level: if config.r#async {
+            config.flush_level
+        } else {
+            Level::Off
+        },
     });
-    let overflow = Arc::new(Overflow::default());
     let root = if config.r#async {
-        asynchronous(
-            root,
-            config.queue_size,
-            config.flush_level,
-            config.important.level,
-            &errors,
-            &overflow,
-        )?
+        asynchronous(root, config.queue_size, &errors)?
     } else {
         root
     };
     let handler = Arc::clone(&errors);
     let logger = builder
         .sink(Arc::clone(&root))
-        .error_handler(move |e| handler.report(e))
+        .error_handler(move |e| handler.backend(e))
         .build_arc()
         .map_err(|e| Error::Output(e.to_string()))?;
     if config.flush_interval_sec > 0 {
@@ -487,55 +349,27 @@ fn prepare(config: Config) -> Result<Runtime> {
         important_level: config.important.level,
         active: RwLock::new(Some(Active { logger, root })),
         errors,
-        overflow,
     })
 }
 
 fn asynchronous(
     root: Arc<dyn Sink>,
     capacity: usize,
-    flush_level: Level,
-    important_level: Level,
     errors: &Arc<Errors>,
-    overflow: &Arc<Overflow>,
 ) -> Result<Arc<dyn Sink>> {
     let pool = spdlog::ThreadPool::builder()
         .capacity(capacity.try_into().expect("validated queue size"))
         .build_arc()
         .map_err(|e| Error::Output(e.to_string()))?;
     let handler = Arc::clone(errors);
-    let reporter = spdlog::Logger::builder()
-        .name("zust-log")
-        .level_filter(spdlog::LevelFilter::All)
-        .sink(root.clone())
+    let sink = AsyncPoolSink::builder()
+        .sink(root)
+        .thread_pool(pool)
+        .overflow_policy(OverflowPolicy::DropIncoming)
         .error_handler(move |e| handler.report(e))
-        .build()
+        .build_arc()
         .map_err(|e| Error::Output(e.to_string()))?;
-    let worker: Arc<dyn Sink> = Arc::new(WorkerSink {
-        prop: SinkProp::default(),
-        root,
-        reporter,
-        capacity,
-        flush_level,
-        important_level,
-        overflow: overflow.clone(),
-    });
-    let build = |policy| {
-        let handler = Arc::clone(errors);
-        AsyncPoolSink::builder()
-            .sink(worker.clone())
-            .thread_pool(pool.clone())
-            .overflow_policy(policy)
-            .error_handler(move |e| handler.report(e))
-            .build_arc()
-            .map_err(|e| Error::Output(e.to_string()))
-    };
-    Ok(Arc::new(AsyncBackend {
-        prop: SinkProp::default(),
-        data: build(OverflowPolicy::DropIncoming)?,
-        control: build(OverflowPolicy::Block)?,
-        overflow: overflow.clone(),
-    }))
+    Ok(sink as Arc<dyn Sink>)
 }
 
 /// Set the ordinary channel's level. The explicit important channel is independent.
@@ -665,21 +499,13 @@ mod tests {
             messages: Mutex::new(Vec::new()),
         });
         let errors = Arc::new(Errors::default());
-        let overflow = Arc::new(Overflow::default());
-        let root = asynchronous(
-            sink.clone(),
-            1,
-            Level::Warn,
-            Level::Warn,
-            &errors,
-            &overflow,
-        )
-        .unwrap();
+        let root = asynchronous(sink.clone(), 1, &errors).unwrap();
+        let handler = errors.clone();
         let logger = spdlog::Logger::builder()
             .sink(root.clone())
+            .error_handler(move |e| handler.backend(e))
             .build_arc()
             .unwrap();
-        assert_eq!(stats().dropped, 0);
         assert!(
             GLOBAL
                 .set(Runtime {
@@ -693,7 +519,6 @@ mod tests {
                         root: root.clone()
                     })),
                     errors: errors.clone(),
-                    overflow: overflow.clone(),
                 })
                 .is_ok()
         );
@@ -704,54 +529,42 @@ mod tests {
         enter.recv_timeout(Duration::from_secs(2)).unwrap();
         crate::info!("queue now full");
         let (finished, finish) = mpsc::channel();
-        let producer = thread::spawn(move || {
-            crate::important!("discard-important");
-            crate::warn!("discard-warn");
-            crate::error!("{}", "x".repeat(4096));
-            finished.send(()).unwrap();
+        let returned = thread::scope(|scope| {
+            let producer = scope.spawn(|| {
+                crate::important!("discard-important");
+                crate::warn!("discard-warn");
+                crate::error!("{}", "x".repeat(4096));
+                guard.flush().unwrap();
+                finished.send(()).unwrap();
+            });
+            let returned = finish.recv_timeout(Duration::from_secs(2)).is_ok();
+            resume.send(()).unwrap();
+            producer.join().unwrap();
+            returned
         });
-        let returned = finish.recv_timeout(Duration::from_secs(2)).is_ok();
-        let control = root.clone();
-        let flushing = thread::spawn(move || control.flush().unwrap());
-        resume.send(()).unwrap();
-        producer.join().unwrap();
-        flushing.join().unwrap();
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while sink.flushes.load(Ordering::SeqCst) == 0 && Instant::now() < deadline {
-            thread::yield_now();
-        }
-        assert!(sink.flushes.load(Ordering::SeqCst) > 0);
-        crate::warn!("accepted-warn");
         guard.shutdown().unwrap();
         assert!(returned);
-        assert_eq!(stats().dropped, 3);
-        assert_eq!(overflow.dropped.load(Ordering::Relaxed), 3);
-        // Three accepted data records plus a direct overflow summary.
-        assert_eq!(sink.count.load(Ordering::SeqCst), 4);
         errors.result().unwrap();
-        let messages = sink.messages.lock().unwrap();
-        assert_eq!(messages[0], "worker blocks here");
-        assert!(messages[1].contains("dropped_total=3"));
-        assert_eq!(messages[2], "queue now full");
-        assert_eq!(messages[3], "accepted-warn");
-        // Explicit request, worker-level flush, and final shutdown flush.
-        assert_eq!(sink.flushes.load(Ordering::SeqCst), 3);
+        assert_eq!(
+            *sink.messages.lock().unwrap(),
+            ["worker blocks here", "queue now full"]
+        );
+        assert_eq!(sink.flushes.load(Ordering::SeqCst), 1);
     }
 
     #[test]
-    fn overflow_report_clock_and_shutdown_delta() {
-        let mut report = Report::default();
-        let start = Instant::now();
-        assert_eq!(report.delta(2, start, false), Some(2));
-        assert_eq!(report.delta(3, start + Duration::from_secs(4), false), None);
-        assert_eq!(
-            report.delta(5, start + Duration::from_secs(5), false),
-            Some(3)
-        );
-        assert_eq!(
-            report.delta(6, start + Duration::from_secs(5), true),
-            Some(1)
-        );
-        assert_eq!(report.delta(6, start + Duration::from_secs(6), true), None);
+    fn capacity_drops_are_not_output_failures_but_disconnects_are() {
+        use spdlog::error::{SendToChannelError, SendToChannelErrorDropped};
+        let errors = Errors::default();
+        errors.backend(spdlog::Error::SendToChannel(
+            SendToChannelError::Full,
+            SendToChannelErrorDropped::Flush,
+        ));
+        errors.result().unwrap();
+        errors.backend(spdlog::Error::SendToChannel(
+            SendToChannelError::Disconnected,
+            SendToChannelErrorDropped::Flush,
+        ));
+        assert!(errors.result().is_err());
     }
 }

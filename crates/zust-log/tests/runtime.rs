@@ -49,6 +49,12 @@ fn run_scenario(scenario: &str) {
         String::from_utf8_lossy(&result.stderr)
     );
     assert!(!String::from_utf8_lossy(&result.stdout).contains('\u{1b}'));
+    if scenario == "concurrent" {
+        assert!(
+            result.stderr.is_empty(),
+            "capacity drops must not write stderr"
+        );
+    }
     fs::remove_dir_all(dir).unwrap();
 }
 #[test]
@@ -72,6 +78,7 @@ fn runtime_scenarios() {
         "threads",
         "important-pattern",
         "flush-level",
+        "async-flush-level",
     ] {
         run_scenario(scenario);
     }
@@ -317,13 +324,9 @@ fn child() {
                 thread.join().unwrap();
             }
             let text = fs::read_to_string(runtime_path).unwrap();
-            let mut ids: Vec<usize> = text
-                .lines()
-                .filter(|l| !l.contains("[logging:overflow]"))
-                .map(|l| l.parse().unwrap())
-                .collect();
+            let mut ids: Vec<usize> = text.lines().map(|l| l.parse().unwrap()).collect();
             let total = accepted.load(Ordering::SeqCst);
-            assert_eq!(ids.len() + zust_log::stats().dropped as usize, total);
+            assert!(ids.len() <= total);
             ids.sort_unstable();
             assert!(ids.windows(2).all(|pair| pair[0] < pair[1]));
             assert!(ids.iter().all(|id| *id < total));
@@ -424,13 +427,22 @@ fn child() {
             guard.shutdown().unwrap();
             assert_eq!(fs::read_to_string(important_path).unwrap(), "I explicit\n");
         }
-        "flush-level" => {
+        "flush-level" | "async-flush-level" => {
+            cfg.r#async = scenario == "async-flush-level";
             cfg.flush_level = Level::Warn;
             cfg.pattern = "%v".into();
             let guard = init(cfg).unwrap();
             zust_log::info!("buffered");
             assert!(fs::read_to_string(&runtime_path).unwrap().is_empty());
             zust_log::warn!("flushed");
+            if scenario == "async-flush-level" {
+                let deadline = std::time::Instant::now() + Duration::from_secs(2);
+                while fs::read_to_string(&runtime_path).unwrap() != "buffered\nflushed\n"
+                    && std::time::Instant::now() < deadline
+                {
+                    thread::yield_now();
+                }
+            }
             assert_eq!(
                 fs::read_to_string(&runtime_path).unwrap(),
                 "buffered\nflushed\n"

@@ -3,6 +3,32 @@
 
 * Releases
 
+** v0.3.0 - 2026-10-22T06:08:42Z
+:PROPERTIES:
+:CUSTOM_ID: v0.3.0
+:END:
+
+*** Changes
+- Replace the dual async data/control adapter with one native AsyncPoolSink using
+  DropIncoming for data and explicit flush requests; retain worker-side severity
+  flushing and shutdown drain/join/final flush behavior.
+- Remove the public Stats/stats() overflow-counter API and automatic overflow
+  summaries. Full-queue drops remain separate from actual output failures.
+- Align the Serde dependencies with Forge's selected catalog and update consumer
+  coverage and bilingual logging/verification guidance.
+
+*** Compatibility
+- This release removes the public Stats and stats() API without a compatibility
+  stub. Consumers using that API must remove or replace those calls.
+- Explicit async flush requests may be dropped when the queue is full and remain
+  non-barriers. Important logging remains diagnostic, not durable audit storage.
+
+*** Verification
+- The staged verification record reports focused Debug/Release tests, consumer
+  checks, static-filter checks, Clippy and formatting checks passing; those
+  results were recorded before this commit and were not rerun during commit
+  preparation. No performance matrix, full build, installation or deployment ran.
+
 ** v0.2.0 - 2026-10-21T12:47:12Z
 :PROPERTIES:
 :CUSTOM_ID: v0.2.0

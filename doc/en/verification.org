@@ -97,3 +97,22 @@ results above. Rust 1.97.1, locked dependencies, Linux x86_64.
   unit selection and both facade/component executable doc examples passed.
 - No full delivery build, downstream application run, sanitizer, soak or
   performance comparison was performed. The native benchmark remains synchronous.
+
+* Minimal nonblocking implementation — 2026-10-22
+
+Current implementation removes Stats/stats(), overflow summaries and the dual
+async data/control adapter. One native AsyncPoolSink uses DropIncoming; only
+full-capacity data/flush errors are ignored. Worker severity flushing remains
+in Router, and shutdown retains native drain/join/final flush. Explicit async
+flush can drop and is not a completion barrier. Earlier sections describe the
+historical implementation, not the current interface.
+
+Rust 1.97.1, --locked --offline: Debug/Release component tests passed (5 unit,
+3 configuration, 3 integration harness tests; runtime_scenarios exercises 19
+operational child scenarios). Renamed consumer: 1/1 in both profiles. Debug
+level-warn and Release release-level-warn static filters passed. Clippy
+--all-targets -D warnings and workspace/consumer formatting checks passed;
+the existing logging example checked in both profiles. The concurrent scenario
+requires empty stderr; true output failures and disconnected channels still
+report errors. No performance matrix, full build, installation or deployment
+ran. Existing staged changes were preserved during verification.
